@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HGV Route Compare — Prototipo de navegación para camiones</title>
+<link rel="icon" href="data:," />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --bg-app:#0b0c0d;
+    --bg-panel:#15161a;
+    --bg-panel-2:#1d1f24;
+    --bg-panel-3:#25272e;
+    --border:#2a2c32;
+    --border-soft:#202227;
+    --text-primary:#e7e8ea;
+    --text-secondary:#8b8d96;
+    --text-faint:#5c5e66;
+    --accent-truck:#f2a93b;
+    --accent-truck-dim:#f2a93b26;
+    --accent-car:#4f8cff;
+    --accent-car-dim:#4f8cff26;
+    --accent-green:#34c77b;
+    --accent-red:#ef5b5b;
+    --tone-warn:#e6a83f;
+    --accent-rest:#b56bf0;
+    --accent-rest-dim:#b56bf026;
+    --danger-bg:#ef5b5b1a;
+    --danger-border:#ef5b5b59;
+    --danger-text:#ff9d9d;
+    --glass-bg:rgba(21,22,26,.92);
+    --shadow-panel:0 12px 32px rgba(0,0,0,.45);
+    --radius:10px;
+    --font-ui:'Inter',system-ui,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+
+  html[data-theme="light"]{
+    --bg-app:#f3f4f6;
+    --bg-panel:#ffffff;
+    --bg-panel-2:#eef0f3;
+    --bg-panel-3:#e1e4e9;
+    --border:#d8dbe1;
+    --border-soft:#e8eaee;
+    --text-primary:#1c1d20;
+    --text-secondary:#5c5e67;
+    --text-faint:#8b8d96;
+    --accent-truck-dim:#f2a93b1f;
+    --accent-car-dim:#4f8cff1f;
+    --accent-rest-dim:#b56bf01a;
+    --danger-bg:#ef5b5b12;
+    --danger-border:#ef5b5b3d;
+    --glass-bg:rgba(255,255,255,.92);
+    --shadow-panel:0 12px 28px rgba(15,23,42,.14);
+  }
+
+  /* Colores de acento reforzados cuando se usan como texto sobre fondos
+     claros (los tonos "brillantes" de --root pierden contraste en blanco). */
+  html[data-theme="light"] .preset-btn.active{color:#b3720c;}
+  html[data-theme="light"] .steps-tab.active[data-mode="truck"]{color:#b3720c;}
+  html[data-theme="light"] .steps-tab.active[data-mode="car"]{color:#1d5fd1;}
+  html[data-theme="light"] .steps-tab.active[data-mode="rest"]{color:#7a3fc4;}
+  html[data-theme="light"] .step-toll{color:#a5720a;}
+  html[data-theme="light"] .error-box{color:#a23636;}
+  html[data-theme="light"] .error-box strong{color:#7a1f1f;}
+
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg-app);
+    color:var(--text-primary);
+    font-family:var(--font-ui);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;}
+  }
+
+  :focus-visible{
+    outline:2px solid var(--accent-truck);
+    outline-offset:2px;
+  }
+
+  button{font-family:inherit;}
+
+  .app{
+    display:flex;
+    height:100vh;
+    width:100vw;
+  }
+
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{
+    width:360px;
+    flex-shrink:0;
+    background:var(--bg-panel);
+    border-right:1px solid var(--border);
+    overflow-y:auto;
+    padding:22px 20px 28px;
+    display:flex;
+    flex-direction:column;
+    gap:22px;
+  }
+  .sidebar::-webkit-scrollbar{width:6px;}
+  .sidebar::-webkit-scrollbar-thumb{background:var(--bg-panel-3);border-radius:3px;}
+  .sidebar::-webkit-scrollbar-track{background:transparent;}
+
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:38px;height:38px;border-radius:9px;flex-shrink:0;
+    background:linear-gradient(150deg,var(--accent-truck),#c97f16);
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;position:relative;
+  }
+  .brand-mark::after{
+    content:"";position:absolute;bottom:-3px;right:-3px;
+    width:9px;height:9px;border-radius:50%;
+    background:var(--accent-green);
+    box-shadow:0 0 0 3px var(--bg-panel), 0 0 8px 1px var(--accent-green);
+  }
+  .brand h1{font-size:14.5px;font-weight:700;letter-spacing:.01em;margin:0;}
+  .brand p{font-size:11px;color:var(--text-secondary);margin:2px 0 0;font-family:var(--font-mono);}
+
+  .theme-toggle{
+    margin-left:auto;flex-shrink:0;width:34px;height:34px;border-radius:9px;
+    background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-secondary);font-size:15px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:border-color .15s,color .15s;
+  }
+  .theme-toggle:hover{border-color:var(--text-faint);color:var(--text-primary);}
+
+  .section{display:flex;flex-direction:column;gap:12px;}
+  .section-title{
+    font-size:10.5px;font-weight:600;color:var(--text-faint);
+    text-transform:uppercase;letter-spacing:.08em;
+    border-bottom:1px solid var(--border-soft);
+    padding-bottom:8px;
+  }
+
+  .field-group{display:flex;flex-direction:column;gap:6px;}
+  .field-group label{
+    font-size:11px;font-weight:500;color:var(--text-secondary);
+    text-transform:uppercase;letter-spacing:.05em;
+  }
+  .field-hint{font-size:10.5px;color:var(--text-faint);margin-top:-2px;}
+
+  input[type=text],input[type=password],input[type=number]{
+    width:100%;
+    background:var(--bg-panel-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+    color:var(--text-primary);
+    font-size:13px;
+    font-family:var(--font-mono);
+  }
+  input::placeholder{color:var(--text-faint);font-family:var(--font-ui);}
+  input:focus{outline:none;border-color:var(--accent-truck);}
+  input[type=number]{font-family:var(--font-mono);}
+
+  .key-row{position:relative;}
+  .key-row input{padding-right:64px;letter-spacing:.03em;}
+  .key-toggle{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--text-secondary);
+    font-size:10.5px;font-family:var(--font-ui);font-weight:600;
+    cursor:pointer;padding:6px 8px;border-radius:6px;
+    text-transform:uppercase;letter-spacing:.04em;
+  }
+  .key-toggle:hover{color:var(--text-primary);background:var(--bg-panel-3);}
+
+  .preset-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .preset-btn{
+    background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-secondary);padding:10px 8px;border-radius:8px;
+    font-size:12px;font-weight:600;cursor:pointer;text-align:center;
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .preset-btn:hover{border-color:#f2a93b70;color:var(--text-primary);}
+  .preset-btn.active{
+    background:var(--accent-truck-dim);border-color:var(--accent-truck);
+    color:var(--accent-truck);
+  }
+
+  .dims-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .dims-grid .full{grid-column:1 / -1;}
+
+  .checkbox-row{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 12px;background:var(--bg-panel-2);
+    border:1px solid var(--border);border-radius:8px;
+  }
+  .checkbox-row input{
+    width:16px;height:16px;flex-shrink:0;
+    accent-color:var(--accent-truck);cursor:pointer;
+  }
+  .checkbox-row label{
+    text-transform:none;font-size:12.5px;font-weight:500;
+    color:var(--text-primary);cursor:pointer;letter-spacing:0;
+  }
+  .checkbox-row .badge{
+    margin-left:auto;font-size:9.5px;font-family:var(--font-mono);
+    color:var(--text-faint);border:1px solid var(--border);
+    padding:2px 6px;border-radius:5px;
+  }
+
+  .btn{
+    border:none;border-radius:8px;padding:11px 16px;
+    font-size:13px;font-weight:600;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    transition:filter .15s, border-color .15s;
+    width:100%;
+  }
+  .btn-secondary{background:var(--bg-panel-2);border:1px solid var(--border);color:var(--text-primary);}
+  .btn-secondary:hover{border-color:var(--text-faint);}
+  .btn-primary{background:linear-gradient(150deg,var(--accent-truck),#c97f16);color:#171000;}
+  .btn-primary:hover{filter:brightness(1.07);}
+  .btn:disabled{opacity:.55;cursor:not-allowed;filter:none;}
+
+  .spinner{
+    width:13px;height:13px;border-radius:50%;
+    border:2px solid rgba(0,0,0,.25);border-top-color:currentColor;
+    display:none;animation:spin .6s linear infinite;
+  }
+  .spinner.active{display:inline-block;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .error-box{
+    display:none;background:var(--danger-bg);border:1px solid var(--danger-border);
+    color:var(--danger-text);border-radius:8px;padding:11px 12px;
+    font-size:12px;line-height:1.45;
+  }
+  .error-box.visible{display:block;}
+  .error-box strong{color:#fff;display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;}
+
+  /* ---------- MAP AREA ---------- */
+  .map-area{flex:1;position:relative;min-width:0;}
+  #map{width:100%;height:100%;background:#0b0c0d;}
+
+  .map-hint{
+    position:absolute;top:16px;left:16px;z-index:400;
+    background:var(--glass-bg);backdrop-filter:blur(6px);
+    border:1px solid var(--border);border-radius:8px;
+    padding:9px 13px;font-size:12px;color:var(--text-secondary);
+    max-width:280px;line-height:1.4;
+  }
+
+  .comparison-panel{
+    position:absolute;top:16px;left:50%;transform:translateX(-50%);
+    z-index:500;width:min(460px, calc(100vw - 400px));
+    background:var(--glass-bg);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px 14px;
+    box-shadow:var(--shadow-panel);
+    display:none;flex-direction:column;gap:14px;
+  }
+  .comparison-panel.visible{display:flex;}
+
+  .panel-header{display:flex;align-items:center;gap:8px;}
+  .panel-dot{width:7px;height:7px;border-radius:50%;background:var(--accent-green);box-shadow:0 0 6px 1px var(--accent-green);}
+  .panel-title{
+    font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--text-secondary);
+  }
+
+  .metric-row{display:flex;flex-direction:column;gap:7px;}
+  .metric-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;}
+  .bar-row{display:flex;align-items:center;gap:10px;}
+  .bar-track{flex:1;height:7px;border-radius:4px;background:var(--bg-panel-2);overflow:hidden;}
+  .bar-fill{height:100%;width:0%;border-radius:4px;transition:width .5s ease;}
+  .bar-fill.truck{background:var(--accent-truck);}
+  .bar-fill.car{background:var(--accent-car);}
+  .bar-value{
+    font-family:var(--font-mono);font-size:12.5px;font-weight:600;
+    min-width:78px;text-align:right;color:var(--text-primary);
+  }
+
+  .panel-legend{display:flex;gap:16px;border-top:1px solid var(--border-soft);padding-top:11px;}
+  .panel-legend span{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);}
+  .legend-swatch{width:14px;height:0;border-top:3px solid;flex-shrink:0;}
+  .legend-swatch.truck{border-top-color:var(--accent-truck);border-top-style:solid;}
+  .legend-swatch.car{border-top-color:var(--accent-car);border-top-style:dashed;}
+
+  .diff-summary{
+    font-size:11.5px;color:var(--text-secondary);line-height:1.5;
+    margin:0;
+  }
+  .diff-summary strong{color:var(--text-primary);font-family:var(--font-mono);font-weight:600;}
+
+  .avg-speed{
+    font-size:11px;color:var(--text-faint);font-family:var(--font-mono);
+    margin:0;letter-spacing:.02em;
+  }
+
+  .panel-actions{display:flex;gap:8px;}
+  .panel-action-btn{
+    flex:1;background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-secondary);font-size:11.5px;font-weight:600;
+    padding:8px 10px;border-radius:7px;cursor:pointer;
+    transition:border-color .15s,color .15s;
+  }
+  .panel-action-btn:hover{color:var(--text-primary);border-color:var(--text-faint);}
+
+  .nav-start-btn{
+    width:100%;border:none;border-radius:9px;padding:12px 14px;
+    font-size:13.5px;font-weight:700;cursor:pointer;
+    background:linear-gradient(150deg,var(--accent-truck),#c97f16);color:#171000;
+    transition:filter .15s;
+  }
+  .nav-start-btn:hover{filter:brightness(1.07);}
+
+  /* ---------- MODO NAVEGACIÓN (pantalla de conducción) ---------- */
+  .nav-mode .sidebar{display:none;}
+  .nav-mode .comparison-panel{display:none;}
+  .nav-mode .steps-drawer{display:none;}
+  .nav-mode .map-hint{display:none;}
+  .nav-mode .nav-overlay{display:block;}
+
+  .nav-overlay{position:absolute;inset:0;z-index:600;pointer-events:none;display:none;}
+
+  .nav-banner{
+    pointer-events:auto;
+    position:absolute;top:14px;left:14px;right:14px;
+    background:var(--glass-bg);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:14px;
+    padding:14px 14px 14px 16px;box-shadow:var(--shadow-panel);
+    display:flex;align-items:center;gap:12px;
+  }
+  .nav-banner-icon{
+    flex-shrink:0;width:46px;height:46px;border-radius:12px;
+    background:var(--accent-truck-dim);color:var(--accent-truck);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-banner-icon svg{width:28px;height:28px;}
+  .nav-banner-text{flex:1;min-width:0;}
+  .nav-banner-message{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--text-primary);line-height:1.3;}
+  .nav-banner-distance{margin:0;font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);}
+  .nav-mute-btn{
+    flex-shrink:0;width:38px;height:38px;border-radius:10px;
+    background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-secondary);font-size:15px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-mute-btn:hover{color:var(--text-primary);}
+
+  .nav-recenter-btn{
+    pointer-events:auto;position:absolute;right:14px;bottom:100px;
+    display:none;background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-primary);font-size:12px;font-weight:600;
+    padding:9px 13px;border-radius:20px;cursor:pointer;box-shadow:var(--shadow-panel);
+  }
+  .nav-recenter-btn.visible{display:block;}
+
+  .nav-bottombar{
+    pointer-events:auto;
+    position:absolute;left:14px;right:14px;bottom:14px;
+    background:var(--glass-bg);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-panel);
+    display:flex;align-items:center;gap:14px;padding:12px 14px;
+  }
+  .nav-bottombar-stat{display:flex;flex-direction:column;line-height:1.2;}
+  .nav-bottombar-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--text-primary);}
+  .nav-bottombar-label{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;}
+  .nav-exit-btn{
+    margin-left:auto;background:var(--danger-bg);border:1px solid var(--danger-border);
+    color:var(--danger-text);font-size:12.5px;font-weight:700;
+    padding:9px 16px;border-radius:9px;cursor:pointer;
+  }
+  html[data-theme="light"] .nav-exit-btn{color:#a23636;}
+  .nav-exit-btn:hover{filter:brightness(1.1);}
+
+  /* ---------- CAJÓN DE PASOS (turn-by-turn) ---------- */
+  .steps-drawer{
+    position:absolute;top:16px;right:16px;bottom:16px;width:320px;
+    background:var(--glass-bg);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:12px;
+    box-shadow:var(--shadow-panel);
+    z-index:480;display:none;flex-direction:column;overflow:hidden;
+  }
+  .steps-drawer.visible{display:flex;}
+
+  .steps-drawer-header{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:12px 10px 12px 14px;border-bottom:1px solid var(--border-soft);
+    flex-shrink:0;
+  }
+  .steps-tabs{display:flex;gap:6px;}
+  .steps-tab{
+    background:var(--bg-panel-2);border:1px solid var(--border);
+    color:var(--text-secondary);font-size:11.5px;font-weight:600;
+    padding:7px 11px;border-radius:7px;cursor:pointer;
+  }
+  .steps-tab.active[data-mode="truck"]{
+    border-color:var(--accent-truck);color:var(--accent-truck);background:var(--accent-truck-dim);
+  }
+  .steps-tab.active[data-mode="car"]{
+    border-color:var(--accent-car);color:var(--accent-car);background:var(--accent-car-dim);
+  }
+  .steps-tab.active[data-mode="rest"]{
+    border-color:var(--accent-rest);color:var(--accent-rest);background:var(--accent-rest-dim);
+  }
+  .steps-close{
+    background:none;border:none;color:var(--text-secondary);
+    font-size:13px;cursor:pointer;padding:6px 9px;border-radius:6px;flex-shrink:0;
+  }
+  .steps-close:hover{background:var(--bg-panel-2);color:var(--text-primary);}
+
+  .steps-list{flex:1;overflow-y:auto;}
+  .steps-list::-webkit-scrollbar{width:6px;}
+  .steps-list::-webkit-scrollbar-thumb{background:var(--bg-panel-3);border-radius:3px;}
+
+  .steps-empty{padding:26px 16px;text-align:center;color:var(--text-faint);font-size:12px;line-height:1.5;}
+
+  .step-item{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--border-soft);cursor:pointer;}
+  .step-item:hover{background:var(--bg-panel-2);}
+  .step-item:last-child{border-bottom:none;}
+
+  .step-icon{
+    flex-shrink:0;width:30px;height:30px;border-radius:8px;
+    background:var(--bg-panel-2);display:flex;align-items:center;justify-content:center;
+    color:var(--text-secondary);
+  }
+  .mode-truck .step-icon{color:var(--accent-truck);}
+  .mode-car .step-icon{color:var(--accent-car);}
+
+  .step-body{flex:1;min-width:0;}
+  .step-message{font-size:12.5px;color:var(--text-primary);line-height:1.4;margin:0 0 5px;}
+  .step-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .step-distance{font-size:11px;font-family:var(--font-mono);color:var(--text-secondary);}
+  .step-toll{
+    font-size:10.5px;color:var(--tone-warn);display:inline-flex;align-items:center;gap:4px;
+  }
+
+  /* Leaflet dark overrides */
+  .leaflet-control-zoom a{
+    background:var(--bg-panel-2) !important;color:var(--text-primary) !important;
+    border-color:var(--border) !important;
+  }
+  .leaflet-control-zoom a:hover{background:var(--bg-panel-3) !important;}
+  .leaflet-control-attribution{
+    background:var(--glass-bg) !important;color:var(--text-faint) !important;
+    font-size:10px !important;
+  }
+  .leaflet-control-attribution a{color:var(--text-secondary) !important;}
+  .leaflet-popup-content-wrapper{background:var(--bg-panel-2);color:var(--text-primary);border-radius:8px;}
+  .leaflet-popup-tip{background:var(--bg-panel-2);}
+  .leaflet-popup-content{margin:9px 12px;font-size:12.5px;font-family:var(--font-ui);}
+  .leaflet-popup-content b{color:var(--text-primary);}
+  .popup-coords{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 880px){
+    .app{flex-direction:column;}
+    .sidebar{
+      width:100%;height:46vh;border-right:none;
+      border-bottom:1px solid var(--border);
+    }
+    .map-area{flex:1;}
+    .comparison-panel{width:calc(100vw - 32px);}
+    .steps-drawer{width:calc(100vw - 32px);}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+
+    <div class="brand">
+      <div class="brand-mark">🚚</div>
+      <div>
+        <h1>HGV Route Compare</h1>
+        <p>prototipo · TomTom API</p>
+      </div>
+      <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro">
+        <span id="themeToggleIcon">☀️</span>
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Autenticación</div>
+      <div class="field-group">
+        <label for="apiKey">API Key de TomTom</label>
+        <div class="key-row">
+          <input type="password" id="apiKey" placeholder="Pega tu clave aquí" autocomplete="off" />
+          <button class="key-toggle" id="toggleKeyBtn" type="button">Ver</button>
+        </div>
+        <span class="field-hint">Se usa solo en tu navegador, nunca se guarda.</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Ruta</div>
+      <div class="field-group">
+        <label for="originInput">Origen</label>
+        <input type="text" id="originInput" placeholder="p. ej. Valencia, España" />
+      </div>
+      <div class="field-group">
+        <label for="destInput">Destino</label>
+        <input type="text" id="destInput" placeholder="p. ej. Madrid, España" />
+      </div>
+      <button class="btn btn-secondary" id="pinsBtn" type="button">
+        <span class="spinner" id="pinsSpinner"></span>
+        <span id="pinsLabel">📍 Buscar pines en el mapa</span>
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Perfil del vehículo (HGV)</div>
+
+      <div class="preset-row">
+        <button class="preset-btn" id="presetRigid" type="button" data-preset="rigid12">Rígido 12t</button>
+        <button class="preset-btn" id="presetTrailer" type="button" data-preset="trailer40">Tráiler 40t</button>
+      </div>
+
+      <div class="dims-grid">
+        <div class="field-group">
+          <label for="vHeight">Altura (m)</label>
+          <input type="number" id="vHeight" placeholder="4.00" step="0.1" min="0" />
+        </div>
+        <div class="field-group">
+          <label for="vWidth">Anchura (m)</label>
+          <input type="number" id="vWidth" placeholder="2.55" step="0.05" min="0" />
+        </div>
+        <div class="field-group">
+          <label for="vLength">Longitud (m)</label>
+          <input type="number" id="vLength" placeholder="16.50" step="0.5" min="0" />
+        </div>
+        <div class="field-group">
+          <label for="vWeight">Peso total (kg)</label>
+          <input type="number" id="vWeight" placeholder="40000" step="500" min="0" />
+        </div>
+        <div class="field-group full">
+          <label for="vAxleWeight">Carga por eje (kg)</label>
+          <input type="number" id="vAxleWeight" placeholder="8000" step="250" min="0" />
+        </div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="hazmatCheckbox" />
+        <label for="hazmatCheckbox">Mercancías peligrosas (ADR)</label>
+        <span class="badge">hazmat</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Conductor · Tacógrafo</div>
+
+      <div class="dims-grid">
+        <div class="field-group">
+          <label for="drivenSinceBreakH">Desde última pausa (h)</label>
+          <input type="number" id="drivenSinceBreakH" placeholder="0" min="0" max="4" step="1" />
+        </div>
+        <div class="field-group">
+          <label for="drivenSinceBreakM">Desde última pausa (min)</label>
+          <input type="number" id="drivenSinceBreakM" placeholder="0" min="0" max="59" step="5" />
+        </div>
+        <div class="field-group">
+          <label for="drivenTodayH">Conducido hoy (h)</label>
+          <input type="number" id="drivenTodayH" placeholder="0" min="0" max="9" step="1" />
+        </div>
+        <div class="field-group">
+          <label for="drivenTodayM">Conducido hoy (min)</label>
+          <input type="number" id="drivenTodayM" placeholder="0" min="0" max="59" step="5" />
+        </div>
+      </div>
+
+      <button class="btn btn-secondary" id="resetDriverBtn" type="button">😴 Recién salido / descansado</button>
+      <button class="btn btn-secondary" id="viewRestPlanBtn" type="button">🛑 Ver paradas recomendadas</button>
+
+      <span class="field-hint">
+        Orientativo según el Reglamento (CE) 561/2006: pausa de 45 min cada 4h30 de conducción y máx. 9h de conducción diaria (ampliable a 10h dos veces por semana). No sustituye al tacógrafo ni es asesoramiento legal.
+      </span>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <button class="btn btn-primary" id="calculateBtn" type="button">
+      <span class="spinner" id="calcSpinner"></span>
+      <span id="calcLabel">Calcular rutas</span>
+    </button>
+
+  </aside>
+
+  <!-- ================= MAP AREA ================= -->
+  <main class="map-area">
+    <div id="map"></div>
+
+    <div class="map-hint" id="mapHint">
+      Introduce tu API Key de TomTom, un origen y un destino, y pulsa <b>Calcular rutas</b> para comparar el trayecto de camión frente al de coche.
+    </div>
+
+    <div class="comparison-panel" id="comparisonPanel">
+      <div class="panel-header">
+        <span class="panel-dot"></span>
+        <span class="panel-title">Comparativa de ruta</span>
+      </div>
+
+      <div class="metric-row">
+        <span class="metric-label">Distancia</span>
+        <div class="bar-row">
+          <div class="bar-track"><div class="bar-fill truck" id="distBarTruck"></div></div>
+          <span class="bar-value" id="truckDistance">—</span>
+        </div>
+        <div class="bar-row">
+          <div class="bar-track"><div class="bar-fill car" id="distBarCar"></div></div>
+          <span class="bar-value" id="carDistance">—</span>
+        </div>
+      </div>
+
+      <div class="metric-row">
+        <span class="metric-label">Tiempo estimado</span>
+        <div class="bar-row">
+          <div class="bar-track"><div class="bar-fill truck" id="timeBarTruck"></div></div>
+          <span class="bar-value" id="truckTime">—</span>
+        </div>
+        <div class="bar-row">
+          <div class="bar-track"><div class="bar-fill car" id="timeBarCar"></div></div>
+          <span class="bar-value" id="carTime">—</span>
+        </div>
+      </div>
+
+      <div class="panel-legend">
+        <span><i class="legend-swatch truck"></i>Ruta HGV</span>
+        <span><i class="legend-swatch car"></i>Ruta coche</span>
+      </div>
+
+      <p class="diff-summary" id="routeDiffSummary"></p>
+      <p class="avg-speed" id="avgSpeedSummary"></p>
+
+      <button class="nav-start-btn" id="startNavBtn" type="button">🧭 Iniciar navegación en vivo</button>
+
+      <div class="panel-actions">
+        <button class="panel-action-btn" id="viewStepsTruckBtn" type="button">Ver pasos HGV</button>
+        <button class="panel-action-btn" id="viewStepsCarBtn" type="button">Ver pasos coche</button>
+      </div>
+    </div>
+
+    <div class="steps-drawer" id="stepsDrawer">
+      <div class="steps-drawer-header">
+        <div class="steps-tabs">
+          <button class="steps-tab" id="stepsTabTruck" data-mode="truck" type="button">🚚 HGV</button>
+          <button class="steps-tab" id="stepsTabCar" data-mode="car" type="button">🚗 Coche</button>
+          <button class="steps-tab" id="stepsTabRest" data-mode="rest" type="button">🛑 Descansos</button>
+        </div>
+        <button class="steps-close" id="stepsCloseBtn" type="button" aria-label="Cerrar pasos">✕</button>
+      </div>
+      <div class="steps-list" id="stepsList"></div>
+    </div>
+
+    <div class="nav-overlay" id="navOverlay">
+      <div class="nav-banner">
+        <div class="nav-banner-icon" id="navBannerIcon"></div>
+        <div class="nav-banner-text">
+          <p class="nav-banner-message" id="navBannerMessage">Buscando señal GPS…</p>
+          <p class="nav-banner-distance" id="navBannerDistance"></p>
+        </div>
+        <button class="nav-mute-btn" id="navMuteBtn" type="button" aria-label="Silenciar voz">
+          <span id="navMuteIcon">🔊</span>
+        </button>
+      </div>
+
+      <button class="nav-recenter-btn" id="navRecenterBtn" type="button">🎯 Recentrar</button>
+
+      <div class="nav-bottombar">
+        <div class="nav-bottombar-stat">
+          <span class="nav-bottombar-value" id="navRemainingTime">--</span>
+          <span class="nav-bottombar-label">min</span>
+        </div>
+        <div class="nav-bottombar-stat">
+          <span class="nav-bottombar-value" id="navRemainingDistance">--</span>
+          <span class="nav-bottombar-label">restantes</span>
+        </div>
+        <div class="nav-bottombar-stat">
+          <span class="nav-bottombar-value" id="navEta">--:--</span>
+          <span class="nav-bottombar-label">llegada</span>
+        </div>
+        <button class="nav-exit-btn" id="navExitBtn" type="button">Salir</button>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     ESTADO GLOBAL
+     ============================================================ */
+  var map = null;
+  var originMarker = null;
+  var destMarker = null;
+  var truckRouteLayer = null;
+  var carRouteLayer = null;
+  var lastOriginCoords = null;
+  var lastDestCoords = null;
+  var lastOriginQuery = null;
+  var lastDestQuery = null;
+  var lastTruckRoute = null;
+  var lastCarRoute = null;
+  var highlightMarker = null;
+  var activeStepsMode = 'truck';
+
+  // ---- Estado del modo navegación en vivo ----
+  var navActive = false;
+  var navWatchId = null;
+  var navRoute = null;
+  var navTrack = [];
+  var navInstructions = [];
+  var navNextIndex = 0;
+  var navAnnouncedFar = [];
+  var navAnnouncedNear = [];
+  var navDestination = null;
+  var navApiKeySnapshot = '';
+  var navVehicleSnapshot = null;
+  var navHazmatType = null;
+  var navMuted = false;
+  var navRecalculating = false;
+  var navLastRecalcAttempt = 0;
+  var navOffRouteStrikes = 0;
+  var navArrived = false;
+  var navLastHeading = 0;
+  var navLastLatLng = null;
+  var navFollowMode = true;
+  var currentPositionMarker = null;
+  var hiddenCarLayerDuringNav = false;
+
+  var VEHICLE_PRESETS = {
+    rigid12:   { height: 3.5,  width: 2.30, length: 8.0,  weight: 12000, axleWeight: 6000 },
+    trailer40: { height: 4.0,  width: 2.55, length: 16.5, weight: 40000, axleWeight: 8000 }
+  };
+
+  var DEFAULT_VEHICLE = { height: 4.0, width: 2.55, length: 16.5, weight: 40000, axleWeight: 8000 };
+
+  /* ============================================================
+     INICIALIZACIÓN DEL MAPA (Leaflet + CartoDB Dark Matter / Positron)
+     ============================================================ */
+  var baseLayer = null;
+  var currentTheme = 'dark';
+
+  function getBasemapUrl(theme){
+    return theme === 'light'
+      ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  }
+
+  function initMap(theme){
+    map = L.map('map', {
+      center: [40.2, -3.6],
+      zoom: 6,
+      zoomControl: true
+    });
+
+    baseLayer = L.tileLayer(getBasemapUrl(theme), {
+      subdomains: 'abcd',
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+  }
+
+  function setMapBasemap(theme){
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = L.tileLayer(getBasemapUrl(theme), {
+      subdomains: 'abcd',
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+  }
+
+  function updateThemeToggleIcon(){
+    document.getElementById('themeToggleIcon').textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme(){
+    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    updateThemeToggleIcon();
+    setMapBasemap(currentTheme);
+    try { localStorage.setItem('hgvThemePref', currentTheme); } catch (e) { /* almacenamiento no disponible */ }
+  }
+
+  function createPinIcon(hexColor){
+    var svg =
+      '<svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M13 0C5.8 0 0 5.8 0 13c0 9.1 13 23 13 23s13-13.9 13-23C26 5.8 20.2 0 13 0z" ' +
+      'fill="' + hexColor + '" stroke="#0b0c0d" stroke-width="1.5"/>' +
+      '<circle cx="13" cy="13" r="5" fill="#0b0c0d" opacity="0.4"/>' +
+      '</svg>';
+    return L.divIcon({
+      className: 'custom-pin',
+      html: svg,
+      iconSize: [26, 36],
+      iconAnchor: [13, 36],
+      popupAnchor: [0, -32]
+    });
+  }
+
+  var ORIGIN_ICON = createPinIcon('#34c77b');
+  var DEST_ICON = createPinIcon('#ef5b5b');
+
+  /* ============================================================
+     UTILIDADES DE UI
+     ============================================================ */
+  function showError(message, title){
+    var box = document.getElementById('errorBox');
+    box.innerHTML = '<strong>' + (title || 'No se pudo continuar') + '</strong>' + message;
+    box.classList.add('visible');
+  }
+
+  function clearError(){
+    var box = document.getElementById('errorBox');
+    box.innerHTML = '';
+    box.classList.remove('visible');
+  }
+
+  function setButtonLoading(which, isLoading){
+    var btnId = which === 'calc' ? 'calculateBtn' : 'pinsBtn';
+    var spinnerId = which === 'calc' ? 'calcSpinner' : 'pinsSpinner';
+    var labelId = which === 'calc' ? 'calcLabel' : 'pinsLabel';
+
+    document.getElementById(btnId).disabled = isLoading;
+    document.getElementById(spinnerId).classList.toggle('active', isLoading);
+    document.getElementById(labelId).textContent = isLoading
+      ? (which === 'calc' ? 'Calculando rutas…' : 'Buscando…')
+      : (which === 'calc' ? 'Calcular rutas' : '📍 Buscar pines en el mapa');
+  }
+
+  function hideMapHint(){
+    var hint = document.getElementById('mapHint');
+    if (hint) hint.style.display = 'none';
+  }
+
+  /* ============================================================
+     VALIDACIÓN DE DATOS DEL VEHÍCULO (con fallback anti-NaN)
+     ============================================================ */
+  function readNumericField(id, fallback){
+    var raw = document.getElementById(id).value;
+    var value = parseFloat(raw);
+    if (!isFinite(value) || value <= 0) {
+      return fallback;
+    }
+    return value;
+  }
+
+  function getVehicleParams(){
+    return {
+      height: readNumericField('vHeight', DEFAULT_VEHICLE.height),
+      width: readNumericField('vWidth', DEFAULT_VEHICLE.width),
+      length: readNumericField('vLength', DEFAULT_VEHICLE.length),
+      weight: readNumericField('vWeight', DEFAULT_VEHICLE.weight),
+      axleWeight: readNumericField('vAxleWeight', DEFAULT_VEHICLE.axleWeight)
+    };
+  }
+
+  function applyPreset(name){
+    var preset = VEHICLE_PRESETS[name];
+    if (!preset) return;
+    document.getElementById('vHeight').value = preset.height;
+    document.getElementById('vWidth').value = preset.width;
+    document.getElementById('vLength').value = preset.length;
+    document.getElementById('vWeight').value = preset.weight;
+    document.getElementById('vAxleWeight').value = preset.axleWeight;
+
+    document.getElementById('presetRigid').classList.toggle('active', name === 'rigid12');
+    document.getElementById('presetTrailer').classList.toggle('active', name === 'trailer40');
+  }
+
+  /* ============================================================
+     API DE TOMTOM — GEOCODIFICACIÓN
+     ============================================================ */
+  function geocodeAddress(query, apiKey){
+    var url = 'https://api.tomtom.com/search/2/geocode/' +
+      encodeURIComponent(query) + '.json?key=' + encodeURIComponent(apiKey) + '&limit=1';
+
+    return fetch(url).then(function(res){
+      if (!res.ok) {
+        return res.json().catch(function(){ return null; }).then(function(body){
+          var detail = (body && body.errorText) || (body && body.detailedError && body.detailedError.message) || ('HTTP ' + res.status);
+          throw new Error('Geocodificación de "' + query + '" fallida: ' + detail);
+        });
+      }
+      return res.json();
+    }).then(function(data){
+      if (!data.results || data.results.length === 0) {
+        throw new Error('No se encontró ninguna coincidencia para "' + query + '".');
+      }
+      var top = data.results[0];
+      return {
+        lat: top.position.lat,
+        lon: top.position.lon,
+        address: (top.address && top.address.freeformAddress) || query
+      };
+    });
+  }
+
+  // Reutiliza las coordenadas ya geocodificadas (o arrastradas manualmente)
+  // si el texto de origen/destino no ha cambiado desde la última búsqueda;
+  // así un pin movido a mano no se resetea al volver a pulsar "Calcular".
+  function resolveLocation(text, apiKey, type){
+    var isOrigin = type === 'origin';
+    var cachedCoords = isOrigin ? lastOriginCoords : lastDestCoords;
+    var cachedQuery = isOrigin ? lastOriginQuery : lastDestQuery;
+
+    if (cachedCoords && cachedQuery === text) {
+      return Promise.resolve(cachedCoords);
+    }
+
+    return geocodeAddress(text, apiKey).then(function(coords){
+      if (isOrigin) { lastOriginQuery = text; } else { lastDestQuery = text; }
+      return coords;
+    });
+  }
+
+  /* ============================================================
+     API DE TOMTOM — RUTAS (calculateRoute)
+     ============================================================ */
+  function fetchRoute(options){
+    var origin = options.origin;
+    var destination = options.destination;
+    var travelMode = options.travelMode;
+    var apiKey = options.apiKey;
+    var vehicle = options.vehicle;
+    var hazmatType = options.hazmatType;
+
+    var coordsPath = origin.lat + ',' + origin.lon + ':' + destination.lat + ',' + destination.lon;
+
+    var params = new URLSearchParams();
+    params.set('key', apiKey);
+    params.set('travelMode', travelMode);
+    params.set('routeType', 'fastest');
+    params.set('traffic', 'true');
+    // Instrucciones paso a paso en español + secciones de peaje (para la lista de pasos).
+    params.set('instructionsType', 'text');
+    params.set('language', 'es-ES');
+    params.append('sectionType', 'toll');
+    params.append('sectionType', 'tollVignette');
+
+    if (travelMode === 'truck' && vehicle) {
+      params.set('vehicleCommercial', 'true');
+      params.set('vehicleWeight', String(Math.round(vehicle.weight)));
+      params.set('vehicleAxleWeight', String(Math.round(vehicle.axleWeight)));
+      params.set('vehicleLength', String(vehicle.length));
+      params.set('vehicleWidth', String(vehicle.width));
+      params.set('vehicleHeight', String(vehicle.height));
+      // El parámetro hazmat solo se envía si el checkbox está marcado.
+      if (hazmatType) {
+        params.set('vehicleLoadType', hazmatType);
+      }
+    }
+
+    var url = 'https://api.tomtom.com/routing/1/calculateRoute/' + coordsPath + '/json?' + params.toString();
+
+    return fetch(url).then(function(res){
+      if (!res.ok) {
+        return res.json().catch(function(){ return null; }).then(function(body){
+          var detail = (body && body.detailedError && body.detailedError.message) ||
+                       (body && body.error && body.error.description) ||
+                       ('HTTP ' + res.status);
+          var modeLabel = travelMode === 'truck' ? 'de camión' : 'de coche';
+          throw new Error('No se pudo calcular la ruta ' + modeLabel + ': ' + detail);
+        });
+      }
+      return res.json();
+    }).then(function(data){
+      if (!data.routes || data.routes.length === 0) {
+        var modeLabel = travelMode === 'truck' ? 'de camión' : 'de coche';
+        throw new Error('TomTom no encontró ninguna ruta ' + modeLabel + ' con las restricciones indicadas.');
+      }
+      return data.routes[0];
+    });
+  }
+
+  /* ============================================================
+     MARCADORES Y CAPAS EN EL MAPA
+     ============================================================ */
+  function buildPopupHtml(label, addressText, lat, lon){
+    return '<b>' + label + '</b><br>' + addressText +
+      '<br><span class="popup-coords">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</span>';
+  }
+
+  // Al soltar un pin arrastrado, se actualizan sus coordenadas guardadas
+  // (sin tocar el texto de origen/destino) para que "Calcular rutas" use
+  // la posición ajustada en lugar de volver a geocodificar la dirección.
+  function attachDragHandler(marker, type){
+    marker.on('dragend', function(e){
+      var pos = e.target.getLatLng();
+      var coords = { lat: pos.lat, lon: pos.lng, address: 'Posición ajustada manualmente' };
+      if (type === 'origin') {
+        lastOriginCoords = coords;
+      } else {
+        lastDestCoords = coords;
+      }
+      e.target.setPopupContent(
+        buildPopupHtml(type === 'origin' ? 'Origen' : 'Destino', coords.address, coords.lat, coords.lon)
+      );
+    });
+  }
+
+  function placeMarker(type, coords){
+    var latlng = [coords.lat, coords.lon];
+    var label = type === 'origin' ? 'Origen' : 'Destino';
+    var icon = type === 'origin' ? ORIGIN_ICON : DEST_ICON;
+
+    if (type === 'origin' && originMarker) map.removeLayer(originMarker);
+    if (type === 'destination' && destMarker) map.removeLayer(destMarker);
+
+    var marker = L.marker(latlng, { icon: icon, draggable: true, autoPan: true })
+      .addTo(map)
+      .bindPopup(buildPopupHtml(label, coords.address, coords.lat, coords.lon))
+      .bindTooltip('Arrastra para ajustar la posición', { direction: 'top', offset: [0, -30], opacity: 0.85 });
+
+    attachDragHandler(marker, type);
+
+    if (type === 'origin') { originMarker = marker; } else { destMarker = marker; }
+  }
+
+  function extractLatLngs(route){
+    var points = [];
+    var legs = route.legs || [];
+    for (var i = 0; i < legs.length; i++) {
+      var legPoints = legs[i].points || [];
+      for (var j = 0; j < legPoints.length; j++) {
+        points.push([legPoints[j].latitude, legPoints[j].longitude]);
+      }
+    }
+    return points;
+  }
+
+  // Orden de capas: primero SIEMPRE la ruta de camión, después la de coche,
+  // así el trazo de coche queda visualmente por encima cuando coinciden.
+  function drawTruckRoute(route){
+    if (truckRouteLayer) map.removeLayer(truckRouteLayer);
+    truckRouteLayer = L.polyline(extractLatLngs(route), {
+      color: '#f2a93b',
+      weight: 6,
+      opacity: 0.92,
+      lineJoin: 'round',
+      lineCap: 'round'
+    }).addTo(map);
+  }
+
+  function drawCarRoute(route){
+    if (carRouteLayer) map.removeLayer(carRouteLayer);
+    carRouteLayer = L.polyline(extractLatLngs(route), {
+      color: '#4f8cff',
+      weight: 3,
+      opacity: 0.95,
+      dashArray: '2, 10',
+      lineJoin: 'round',
+      lineCap: 'round'
+    }).addTo(map);
+  }
+
+  /* ============================================================
+     FORMATEO Y PANEL DE COMPARATIVA
+     ============================================================ */
+  function formatDistance(meters){
+    return (meters / 1000).toFixed(1) + ' km';
+  }
+
+  function formatDuration(seconds){
+    var h = Math.floor(seconds / 3600);
+    var m = Math.round((seconds % 3600) / 60);
+    if (h > 0) return h + ' h ' + m + ' min';
+    return m + ' min';
+  }
+
+  function updateComparisonPanel(truckRoute, carRoute){
+    var panel = document.getElementById('comparisonPanel');
+    panel.classList.add('visible');
+
+    var td = truckRoute.summary.lengthInMeters;
+    var tt = truckRoute.summary.travelTimeInSeconds;
+    var cd = carRoute.summary.lengthInMeters;
+    var ct = carRoute.summary.travelTimeInSeconds;
+
+    document.getElementById('truckDistance').textContent = formatDistance(td);
+    document.getElementById('carDistance').textContent = formatDistance(cd);
+    document.getElementById('truckTime').textContent = formatDuration(tt);
+    document.getElementById('carTime').textContent = formatDuration(ct);
+
+    var maxDist = Math.max(td, cd, 1);
+    var maxTime = Math.max(tt, ct, 1);
+    document.getElementById('distBarTruck').style.width = Math.max(6, (td / maxDist) * 100) + '%';
+    document.getElementById('distBarCar').style.width = Math.max(6, (cd / maxDist) * 100) + '%';
+    document.getElementById('timeBarTruck').style.width = Math.max(6, (tt / maxTime) * 100) + '%';
+    document.getElementById('timeBarCar').style.width = Math.max(6, (ct / maxTime) * 100) + '%';
+
+    var distDiffKm = (td - cd) / 1000;
+    var timeDiffMin = Math.round((tt - ct) / 60);
+    var distPhrase = distDiffKm >= 0
+      ? Math.abs(distDiffKm).toFixed(1) + ' km más larga'
+      : Math.abs(distDiffKm).toFixed(1) + ' km más corta';
+    var timePhrase = timeDiffMin >= 0
+      ? Math.abs(timeDiffMin) + ' min más'
+      : Math.abs(timeDiffMin) + ' min menos';
+
+    document.getElementById('routeDiffSummary').innerHTML =
+      'La ruta HGV es <strong>' + distPhrase + '</strong> y tarda <strong>' + timePhrase +
+      '</strong> que la ruta de coche equivalente.';
+
+    // Velocidad media real de cada ruta: suele explicar por qué una
+    // diferencia de distancia pequeña puede traducirse en un salto grande
+    // de tiempo (la ruta de camión discurre por vías más lentas).
+    var truckAvgSpeed = (td / 1000) / (tt / 3600);
+    var carAvgSpeed = (cd / 1000) / (ct / 3600);
+    document.getElementById('avgSpeedSummary').textContent =
+      'Velocidad media — HGV: ' + Math.round(truckAvgSpeed) + ' km/h · Coche: ' + Math.round(carAvgSpeed) + ' km/h';
+  }
+
+  /* ============================================================
+     PASOS DE LA RUTA (turn-by-turn) A PARTIR DE guidance.instructions
+     ============================================================ */
+  var MANEUVER_ICONS = {
+    straight: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4M12 4l-5 5M12 4l5 5"/></svg>',
+    left: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 18v-5a5 5 0 0 0-5-5H5M5 8l4-4M5 8l4 4"/></svg>',
+    right: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18v-5a5 5 0 0 1 5-5h10M19 8l-4-4M19 8l-4 4"/></svg>',
+    roundabout: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="6"/><path d="M12 4v4M12 4l-3 3M12 4l3 3"/></svg>',
+    uturn: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5a5 5 0 0 1 5 5v9M9 5L5 9M9 5l4 4"/></svg>',
+    depart: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>',
+    arrive: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.6 7-12a7 7 0 0 0-14 0c0 4.4 7 12 7 12z"/><circle cx="12" cy="9" r="2.1" fill="currentColor" stroke="none"/></svg>'
+  };
+
+  function pickManeuverIcon(maneuver){
+    var m = (maneuver || '').toUpperCase();
+    if (m.indexOf('DEPART') !== -1) return 'depart';
+    if (m.indexOf('ARRIVE') !== -1) return 'arrive';
+    if (m.indexOf('ROUNDABOUT') !== -1 || m.indexOf('ROTARY') !== -1) return 'roundabout';
+    if (m.indexOf('U_TURN') !== -1) return 'uturn';
+    if (m.indexOf('LEFT') !== -1) return 'left';
+    if (m.indexOf('RIGHT') !== -1) return 'right';
+    return 'straight';
+  }
+
+  function formatStepDistance(meters){
+    if (meters < 950) return Math.round(meters) + ' m';
+    return (meters / 1000).toFixed(1) + ' km';
+  }
+
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  // Convierte guidance.instructions en pasos legibles, cruzando cada maniobra
+  // con las secciones de peaje ("toll"/"tollVignette") por su pointIndex,
+  // igual que hace la app de mapas del móvil con el aviso "Carretera con peajes".
+  function buildSteps(route){
+    var instructions = (route.guidance && route.guidance.instructions) || [];
+    var sections = route.sections || [];
+    var tollSections = sections.filter(function(s){
+      return s.sectionType === 'TOLL' || s.sectionType === 'TOLL_VIGNETTE';
+    });
+
+    function hasTollAt(pointIndex){
+      if (pointIndex == null) return false;
+      for (var i = 0; i < tollSections.length; i++) {
+        if (pointIndex >= tollSections[i].startPointIndex && pointIndex <= tollSections[i].endPointIndex) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    var totalMeters = (route.summary && route.summary.lengthInMeters) || 0;
+
+    return instructions.map(function(instr, idx){
+      var next = instructions[idx + 1];
+      var segmentMeters = next
+        ? Math.max(0, next.routeOffsetInMeters - instr.routeOffsetInMeters)
+        : Math.max(0, totalMeters - instr.routeOffsetInMeters);
+
+      return {
+        message: instr.message || instr.street || 'Continúa por la ruta',
+        icon: pickManeuverIcon(instr.maneuver || instr.instructionType),
+        distanceMeters: segmentMeters,
+        hasToll: hasTollAt(instr.pointIndex),
+        lat: instr.point ? instr.point.latitude : null,
+        lon: instr.point ? instr.point.longitude : null
+      };
+    });
+  }
+
+  function renderSteps(mode){
+    var route = mode === 'truck' ? lastTruckRoute : lastCarRoute;
+    var list = document.getElementById('stepsList');
+    list.className = 'steps-list mode-' + mode;
+
+    if (!route) {
+      list.innerHTML = '<div class="steps-empty">Calcula una ruta para ver sus pasos.</div>';
+      return;
+    }
+
+    var steps = buildSteps(route);
+    if (steps.length === 0) {
+      list.innerHTML = '<div class="steps-empty">Esta ruta no incluye instrucciones detalladas.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    steps.forEach(function(step){
+      var item = document.createElement('div');
+      item.className = 'step-item';
+      item.innerHTML =
+        '<div class="step-icon">' + MANEUVER_ICONS[step.icon] + '</div>' +
+        '<div class="step-body">' +
+          '<p class="step-message">' + escapeHtml(step.message) + '</p>' +
+          '<div class="step-meta">' +
+            '<span class="step-distance">' + formatStepDistance(step.distanceMeters) + '</span>' +
+            (step.hasToll ? '<span class="step-toll">⚠ Carretera de peaje</span>' : '') +
+          '</div>' +
+        '</div>';
+      item.addEventListener('click', function(){
+        highlightStepOnMap(step, mode);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function openStepsDrawer(mode){
+    activeStepsMode = mode;
+    document.getElementById('stepsDrawer').classList.add('visible');
+    document.getElementById('stepsTabTruck').classList.toggle('active', mode === 'truck');
+    document.getElementById('stepsTabCar').classList.toggle('active', mode === 'car');
+    document.getElementById('stepsTabRest').classList.toggle('active', mode === 'rest');
+    if (mode === 'rest') {
+      renderRestPlan();
+    } else {
+      renderSteps(mode);
+    }
+  }
+
+  function closeStepsDrawer(){
+    document.getElementById('stepsDrawer').classList.remove('visible');
+    clearHighlight();
+  }
+
+  function highlightStepOnMap(step, mode){
+    if (step.lat == null || step.lon == null) return;
+    clearHighlight();
+    var color = mode === 'truck' ? '#f2a93b' : mode === 'car' ? '#4f8cff' : '#b56bf0';
+    highlightMarker = L.circleMarker([step.lat, step.lon], {
+      radius: 10,
+      color: color,
+      weight: 3,
+      fillColor: color,
+      fillOpacity: 0.25
+    }).addTo(map);
+    map.flyTo([step.lat, step.lon], Math.max(map.getZoom(), 15), { duration: 0.6 });
+  }
+
+  function clearHighlight(){
+    if (highlightMarker) {
+      map.removeLayer(highlightMarker);
+      highlightMarker = null;
+    }
+  }
+
+  /* ============================================================
+     GEOMETRÍA DE RUTA — usada por la navegación en vivo:
+     distancia entre coordenadas, proyección del punto GPS sobre la
+     polilínea real (para saber cuánto llevas recorrido y si te has
+     desviado) y rumbo entre dos puntos como respaldo si el GPS no
+     da heading.
+     ============================================================ */
+  function haversineMeters(lat1, lon1, lat2, lon2){
+    var R = 6371000;
+    var rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad;
+    var dLon = (lon2 - lon1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function buildCumulativeTrack(latlngs){
+    var track = [];
+    var cum = 0;
+    for (var i = 0; i < latlngs.length; i++) {
+      if (i > 0) cum += haversineMeters(latlngs[i - 1][0], latlngs[i - 1][1], latlngs[i][0], latlngs[i][1]);
+      track.push({ lat: latlngs[i][0], lon: latlngs[i][1], cum: cum });
+    }
+    return track;
+  }
+
+  // Aproximación plana local en metros (suficiente para las distancias
+  // cortas entre puntos consecutivos de una ruta; no es geodesia exacta).
+  function toLocalXY(lat, lon, originLat){
+    var mPerDegLat = 110540;
+    var mPerDegLon = 111320 * Math.cos(originLat * Math.PI / 180);
+    return { x: lon * mPerDegLon, y: lat * mPerDegLat };
+  }
+
+  // Encuentra el punto más cercano de la polilínea real a una coordenada GPS,
+  // devolviendo tanto la distancia perpendicular (para detectar desvíos) como
+  // los metros ya recorridos hasta ese punto (para ETA/distancia restante).
+  function findClosestPointOnTrack(track, lat, lon){
+    if (!track.length) return null;
+    var origin = track[0].lat;
+    var p = toLocalXY(lat, lon, origin);
+    var best = null;
+
+    for (var i = 0; i < track.length - 1; i++) {
+      var a = toLocalXY(track[i].lat, track[i].lon, origin);
+      var b = toLocalXY(track[i + 1].lat, track[i + 1].lon, origin);
+      var abx = b.x - a.x, aby = b.y - a.y;
+      var lenSq = abx * abx + aby * aby;
+      var t = lenSq > 0 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      var projX = a.x + abx * t, projY = a.y + aby * t;
+      var dist = Math.sqrt(Math.pow(p.x - projX, 2) + Math.pow(p.y - projY, 2));
+      if (!best || dist < best.distanceMeters) {
+        best = { distanceMeters: dist, cumMeters: track[i].cum + (track[i + 1].cum - track[i].cum) * t };
+      }
+    }
+    return best;
+  }
+
+  function computeBearing(lat1, lon1, lat2, lon2){
+    var rad = Math.PI / 180;
+    var y = Math.sin((lon2 - lon1) * rad) * Math.cos(lat2 * rad);
+    var x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad) -
+            Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos((lon2 - lon1) * rad);
+    return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+  }
+
+  // Igual que interpolateRoutePointByTime pero en sentido inverso: dado un
+  // avance en metros, calcula el tiempo de viaje acumulado correspondiente
+  // (para el ETA en tiempo real durante la navegación).
+  function interpolateTimeByOffset(route, offsetMeters){
+    var instr = (route.guidance && route.guidance.instructions) || [];
+    if (!instr.length) return 0;
+    if (offsetMeters <= instr[0].routeOffsetInMeters) return instr[0].travelTimeInSeconds;
+    for (var i = 0; i < instr.length - 1; i++) {
+      var a = instr[i], b = instr[i + 1];
+      if (offsetMeters >= a.routeOffsetInMeters && offsetMeters <= b.routeOffsetInMeters) {
+        var span = b.routeOffsetInMeters - a.routeOffsetInMeters;
+        var frac = span > 0 ? (offsetMeters - a.routeOffsetInMeters) / span : 0;
+        return a.travelTimeInSeconds + (b.travelTimeInSeconds - a.travelTimeInSeconds) * frac;
+      }
+    }
+    return instr[instr.length - 1].travelTimeInSeconds;
+  }
+
+  /* ============================================================
+     ASISTENTE DE TACÓGRAFO — estimación de paradas de descanso
+     Reglamento (CE) 561/2006, simplificado para un solo conductor:
+     - Pausa de 45 min tras 4h30 de conducción continua.
+     - Máximo 9h de conducción diaria (orientativo; ampliable a 10h
+       dos veces por semana, no modelado aquí).
+     ============================================================ */
+  var TACHO_MAX_CONTINUOUS_SECONDS = 4.5 * 3600;
+  var TACHO_MAX_DAILY_SECONDS = 9 * 3600;
+
+  function readDriverField(id){
+    var val = parseFloat(document.getElementById(id).value);
+    if (!isFinite(val) || val < 0) return 0;
+    return val;
+  }
+
+  function getDriverStatusSeconds(){
+    var sinceBreakH = readDriverField('drivenSinceBreakH');
+    var sinceBreakM = readDriverField('drivenSinceBreakM');
+    var todayH = readDriverField('drivenTodayH');
+    var todayM = readDriverField('drivenTodayM');
+    return {
+      sinceBreakSeconds: (sinceBreakH * 3600) + (sinceBreakM * 60),
+      todaySeconds: (todayH * 3600) + (todayM * 60)
+    };
+  }
+
+  // Simula el trayecto en bloques de conducción y devuelve los puntos
+  // (en segundos desde la salida) donde la normativa exige parar.
+  function planRestStops(tripSeconds, sinceBreakSeconds, todaySeconds){
+    var stops = [];
+    var elapsedSinceBreak = sinceBreakSeconds;
+    var elapsedToday = todaySeconds;
+    var elapsedInTrip = 0;
+    var guard = 0;
+
+    while (guard < 12) {
+      guard++;
+      var remaining = tripSeconds - elapsedInTrip;
+      if (remaining <= 0) break;
+
+      var toBreakLimit = TACHO_MAX_CONTINUOUS_SECONDS - elapsedSinceBreak;
+      var toDailyLimit = TACHO_MAX_DAILY_SECONDS - elapsedToday;
+      var toLimit = Math.min(toBreakLimit, toDailyLimit);
+      var type = toDailyLimit <= toBreakLimit ? 'daily' : 'break';
+
+      if (toLimit <= 0) {
+        stops.push({ atTripSeconds: elapsedInTrip, type: type, immediate: elapsedInTrip === 0 });
+        elapsedSinceBreak = 0;
+        if (type === 'daily') elapsedToday = 0;
+        continue;
+      }
+
+      if (toLimit >= remaining) break;
+
+      elapsedInTrip += toLimit;
+      elapsedSinceBreak += toLimit;
+      elapsedToday += toLimit;
+
+      stops.push({ atTripSeconds: elapsedInTrip, type: type, immediate: false });
+
+      elapsedSinceBreak = 0;
+      if (type === 'daily') elapsedToday = 0;
+    }
+
+    return stops;
+  }
+
+  // Ubica un instante (segundos desde la salida) sobre la geometría real
+  // de la ruta interpolando entre los dos guidance.instructions más cercanos,
+  // reutilizando el mismo campo travelTimeInSeconds que ya pedimos para los pasos.
+  function interpolateRoutePointByTime(route, targetSeconds){
+    var instr = (route.guidance && route.guidance.instructions) || [];
+    if (!instr.length) return null;
+
+    if (targetSeconds <= instr[0].travelTimeInSeconds) {
+      return { lat: instr[0].point.latitude, lon: instr[0].point.longitude };
+    }
+    for (var i = 0; i < instr.length - 1; i++) {
+      var a = instr[i], b = instr[i + 1];
+      if (targetSeconds >= a.travelTimeInSeconds && targetSeconds <= b.travelTimeInSeconds) {
+        var span = b.travelTimeInSeconds - a.travelTimeInSeconds;
+        var frac = span > 0 ? (targetSeconds - a.travelTimeInSeconds) / span : 0;
+        return {
+          lat: a.point.latitude + (b.point.latitude - a.point.latitude) * frac,
+          lon: a.point.longitude + (b.point.longitude - a.point.longitude) * frac
+        };
+      }
+    }
+    var last = instr[instr.length - 1];
+    return { lat: last.point.latitude, lon: last.point.longitude };
+  }
+
+  function reverseGeocode(lat, lon, apiKey){
+    var url = 'https://api.tomtom.com/search/2/reverseGeocode/' + lat + ',' + lon + '.json?key=' + encodeURIComponent(apiKey);
+    return fetch(url)
+      .then(function(res){ return res.ok ? res.json() : null; })
+      .then(function(data){
+        if (!data || !data.addresses || !data.addresses.length) return null;
+        var addr = data.addresses[0].address;
+        return addr.freeformAddress || addr.municipality || null;
+      })
+      .catch(function(){ return null; });
+  }
+
+  function setRestLocationLabel(idx, text){
+    var el = document.getElementById('restLoc' + idx);
+    if (el) el.textContent = text;
+  }
+
+  function renderRestPlan(){
+    var list = document.getElementById('stepsList');
+    list.className = 'steps-list mode-rest';
+    list.innerHTML = '';
+
+    if (!lastTruckRoute) {
+      list.innerHTML = '<div class="steps-empty">Calcula la ruta HGV para estimar las paradas de descanso.</div>';
+      return;
+    }
+
+    var driver = getDriverStatusSeconds();
+    var tripSeconds = lastTruckRoute.summary.travelTimeInSeconds;
+
+    if (driver.sinceBreakSeconds >= TACHO_MAX_CONTINUOUS_SECONDS || driver.todaySeconds >= TACHO_MAX_DAILY_SECONDS) {
+      list.innerHTML = '<div class="steps-empty">⚠️ Según los datos introducidos ya habrías superado el límite de conducción legal. Descansa antes de iniciar este trayecto.</div>';
+      return;
+    }
+
+    var stops = planRestStops(tripSeconds, driver.sinceBreakSeconds, driver.todaySeconds);
+    var intro = document.createElement('div');
+    intro.className = 'steps-empty';
+    intro.style.cssText = 'text-align:left;padding:12px 14px;border-bottom:1px solid var(--border-soft);color:var(--text-faint);';
+
+    if (stops.length === 0) {
+      intro.textContent = '✅ Puedes completar este trayecto (' + formatDuration(tripSeconds) + ') sin pausas obligatorias según los datos introducidos.';
+      list.appendChild(intro);
+      return;
+    }
+
+    intro.textContent = 'Estimación orientativa según el Reglamento (CE) 561/2006 — no sustituye al tacógrafo. ' + stops.length + ' parada(s) recomendada(s):';
+    list.appendChild(intro);
+
+    var apiKey = document.getElementById('apiKey').value.trim();
+    var chain = Promise.resolve();
+
+    stops.forEach(function(stop, idx){
+      var point = interpolateRoutePointByTime(lastTruckRoute, stop.atTripSeconds);
+      var title = stop.type === 'daily' ? 'Descanso diario (mín. 11 h)' : 'Pausa obligatoria (mín. 45 min)';
+      var whenText = stop.immediate ? 'Antes de iniciar el trayecto' : 'A las ' + formatDuration(stop.atTripSeconds) + ' de viaje';
+
+      var item = document.createElement('div');
+      item.className = 'step-item';
+      item.innerHTML =
+        '<div class="step-icon">' + (stop.type === 'daily' ? MANEUVER_ICONS.arrive : MANEUVER_ICONS.depart) + '</div>' +
+        '<div class="step-body">' +
+          '<p class="step-message"><strong>' + (idx + 1) + '. ' + title + '</strong><br>' + whenText + '</p>' +
+          '<div class="step-meta"><span class="step-distance" id="restLoc' + idx + '">' +
+            (point ? 'Buscando ubicación…' : 'Ubicación no disponible') +
+          '</span></div>' +
+        '</div>';
+
+      if (point) {
+        item.addEventListener('click', function(){
+          highlightStepOnMap(point, 'rest');
+        });
+      }
+      list.appendChild(item);
+
+      if (point) {
+        // Geocodificación inversa secuencial (misma razón que en el ruteo: evitar 429).
+        chain = chain.then(function(){
+          if (!apiKey) {
+            setRestLocationLabel(idx, point.lat.toFixed(4) + ', ' + point.lon.toFixed(4));
+            return null;
+          }
+          return reverseGeocode(point.lat, point.lon, apiKey).then(function(label){
+            setRestLocationLabel(idx, label ? ('Cerca de ' + label) : (point.lat.toFixed(4) + ', ' + point.lon.toFixed(4)));
+          });
+        });
+      }
+    });
+  }
+
+  /* ============================================================
+     ACCIÓN: BUSCAR PINES (solo geocodificación)
+     ============================================================ */
+  function searchPins(){
+    clearError();
+    var apiKey = document.getElementById('apiKey').value.trim();
+    var originText = document.getElementById('originInput').value.trim();
+    var destText = document.getElementById('destInput').value.trim();
+
+    if (!apiKey) {
+      showError('Introduce una clave de API de TomTom válida para geocodificar direcciones.');
+      return;
+    }
+    if (!originText && !destText) {
+      showError('Escribe al menos una dirección de origen o destino.');
+      return;
+    }
+
+    setButtonLoading('pins', true);
+    hideMapHint();
+
+    var chain = Promise.resolve();
+
+    if (originText) {
+      chain = chain.then(function(){
+        return geocodeAddress(originText, apiKey).then(function(coords){
+          lastOriginCoords = coords;
+          lastOriginQuery = originText;
+          placeMarker('origin', coords);
+        });
+      });
+    }
+    if (destText) {
+      chain = chain.then(function(){
+        return geocodeAddress(destText, apiKey).then(function(coords){
+          lastDestCoords = coords;
+          lastDestQuery = destText;
+          placeMarker('destination', coords);
+        });
+      });
+    }
+
+    chain.then(function(){
+      var pts = [];
+      if (lastOriginCoords) pts.push([lastOriginCoords.lat, lastOriginCoords.lon]);
+      if (lastDestCoords) pts.push([lastDestCoords.lat, lastDestCoords.lon]);
+      if (pts.length === 1) {
+        map.setView(pts[0], 12);
+      } else if (pts.length > 1) {
+        map.fitBounds(L.latLngBounds(pts), { padding: [70, 70] });
+      }
+    }).catch(function(err){
+      showError(err.message);
+    }).finally(function(){
+      setButtonLoading('pins', false);
+    });
+  }
+
+  /* ============================================================
+     ACCIÓN: CALCULAR RUTAS (geocodifica, pinta pines, rutea en serie)
+     ============================================================ */
+  function calculateRoutes(){
+    clearError();
+    var apiKey = document.getElementById('apiKey').value.trim();
+    var originText = document.getElementById('originInput').value.trim();
+    var destText = document.getElementById('destInput').value.trim();
+
+    if (!apiKey) {
+      showError('Falta la API Key de TomTom. Introduce una clave válida para continuar.');
+      return;
+    }
+    if (!originText || !destText) {
+      showError('Introduce tanto el origen como el destino antes de calcular la ruta.');
+      return;
+    }
+
+    setButtonLoading('calc', true);
+    hideMapHint();
+    clearHighlight();
+
+    // 1) Resolver origen y destino: si el texto no cambió desde la última
+    //    búsqueda, se reutiliza el pin actual (incluye ajustes por arrastre);
+    //    si cambió o es la primera vez, se geocodifica y se coloca el pin.
+    resolveLocation(originText, apiKey, 'origin')
+      .then(function(originCoords){
+        var isFresh = originCoords !== lastOriginCoords;
+        lastOriginCoords = originCoords;
+        if (isFresh) placeMarker('origin', originCoords);
+        return resolveLocation(destText, apiKey, 'destination');
+      })
+      .then(function(destCoords){
+        var isFresh = destCoords !== lastDestCoords;
+        lastDestCoords = destCoords;
+        if (isFresh) placeMarker('destination', destCoords);
+
+        map.fitBounds(
+          L.latLngBounds([
+            [lastOriginCoords.lat, lastOriginCoords.lon],
+            [lastDestCoords.lat, lastDestCoords.lon]
+          ]),
+          { padding: [80, 80] }
+        );
+
+        var vehicle = getVehicleParams();
+        var hazmatChecked = document.getElementById('hazmatCheckbox').checked;
+        // Solo se incluye el tipo de carga hazmat si el checkbox está activo.
+        var hazmatType = hazmatChecked ? 'otherHazmatGeneral' : null;
+
+        // 2) Petición SECUENCIAL: primero camión, después coche (sin Promise.all)
+        //    para evitar errores 429 por límite de peticiones simultáneas.
+        return fetchRoute({
+          apiKey: apiKey,
+          origin: lastOriginCoords,
+          destination: lastDestCoords,
+          travelMode: 'truck',
+          vehicle: vehicle,
+          hazmatType: hazmatType
+        }).then(function(truckRoute){
+          drawTruckRoute(truckRoute);
+          lastTruckRoute = truckRoute;
+
+          return fetchRoute({
+            apiKey: apiKey,
+            origin: lastOriginCoords,
+            destination: lastDestCoords,
+            travelMode: 'car'
+          }).then(function(carRoute){
+            drawCarRoute(carRoute);
+            lastCarRoute = carRoute;
+            updateComparisonPanel(truckRoute, carRoute);
+
+            if (document.getElementById('stepsDrawer').classList.contains('visible')) {
+              if (activeStepsMode === 'rest') {
+                renderRestPlan();
+              } else {
+                renderSteps(activeStepsMode);
+              }
+            }
+          });
+        });
+      })
+      .catch(function(err){
+        showError(err.message);
+      })
+      .finally(function(){
+        setButtonLoading('calc', false);
+      });
+  }
+
+  /* ============================================================
+     NAVEGACIÓN EN VIVO — seguimiento GPS, voz y recálculo automático
+     ============================================================ */
+  function setNavRouteData(route){
+    navRoute = route;
+    navTrack = buildCumulativeTrack(extractLatLngs(route));
+    navInstructions = (route.guidance && route.guidance.instructions) || [];
+    navNextIndex = 0;
+    navAnnouncedFar = navInstructions.map(function(){ return false; });
+    navAnnouncedNear = navInstructions.map(function(){ return false; });
+  }
+
+  function speak(text){
+    if (navMuted || !text) return;
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      var utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'es-ES';
+      utter.rate = 1;
+      window.speechSynthesis.speak(utter);
+    } catch (e) { /* síntesis de voz no disponible en este navegador */ }
+  }
+
+  function startNavigation(){
+    if (!lastTruckRoute) {
+      showError('Calcula primero la ruta HGV antes de iniciar la navegación.');
+      return;
+    }
+    if (!lastDestCoords) {
+      showError('No hay destino guardado. Vuelve a calcular la ruta.');
+      return;
+    }
+    if (!('geolocation' in navigator)) {
+      showError('Este navegador no soporta geolocalización.');
+      return;
+    }
+    var apiKey = document.getElementById('apiKey').value.trim();
+    if (!apiKey) {
+      showError('Falta la API Key de TomTom (se necesita para poder recalcular la ruta si te desvías).');
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      showError('Puede que el GPS no funcione así: los navegadores solo lo permiten en páginas HTTPS o en "localhost". Si no te pide permiso, sirve este archivo por HTTPS.');
+    }
+
+    navApiKeySnapshot = apiKey;
+    navVehicleSnapshot = getVehicleParams();
+    navHazmatType = document.getElementById('hazmatCheckbox').checked ? 'otherHazmatGeneral' : null;
+    navDestination = { lat: lastDestCoords.lat, lon: lastDestCoords.lon };
+
+    setNavRouteData(lastTruckRoute);
+
+    navArrived = false;
+    navOffRouteStrikes = 0;
+    navRecalculating = false;
+    navLastRecalcAttempt = 0;
+    navMuted = false;
+    navFollowMode = true;
+    navLastLatLng = null;
+    document.getElementById('navMuteIcon').textContent = '🔊';
+    document.getElementById('navBannerIcon').innerHTML = MANEUVER_ICONS.depart;
+    document.getElementById('navBannerMessage').textContent = 'Buscando señal GPS…';
+    document.getElementById('navBannerDistance').textContent = '';
+    document.getElementById('navRecenterBtn').classList.remove('visible');
+
+    closeStepsDrawer();
+    clearHighlight();
+
+    if (carRouteLayer) { map.removeLayer(carRouteLayer); hiddenCarLayerDuringNav = true; }
+    if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+
+    document.body.classList.add('nav-mode');
+    navActive = true;
+
+    navWatchId = navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 15000
+    });
+
+    speak('Navegación iniciada.');
+  }
+
+  function stopNavigation(){
+    navActive = false;
+    if (navWatchId != null) {
+      navigator.geolocation.clearWatch(navWatchId);
+      navWatchId = null;
+    }
+    try { window.speechSynthesis.cancel(); } catch (e) { /* nada que cancelar */ }
+
+    document.body.classList.remove('nav-mode');
+
+    if (currentPositionMarker) { map.removeLayer(currentPositionMarker); currentPositionMarker = null; }
+    if (hiddenCarLayerDuringNav && lastCarRoute) { drawCarRoute(lastCarRoute); hiddenCarLayerDuringNav = false; }
+    if (lastOriginCoords) { placeMarker('origin', lastOriginCoords); }
+  }
+
+  function updateCurrentPositionMarker(lat, lon, heading){
+    var html =
+      '<div style="transform:rotate(' + heading + 'deg);width:26px;height:26px;">' +
+        '<svg viewBox="0 0 26 26" width="26" height="26">' +
+          '<circle cx="13" cy="13" r="11" fill="#2f7bff" opacity="0.22"/>' +
+          '<path d="M13 3 L19 20 L13 16 L7 20 Z" fill="#2f7bff" stroke="#ffffff" stroke-width="1.2"/>' +
+        '</svg>' +
+      '</div>';
+    var icon = L.divIcon({ className: 'nav-position-icon', html: html, iconSize: [26, 26], iconAnchor: [13, 13] });
+
+    if (!currentPositionMarker) {
+      currentPositionMarker = L.marker([lat, lon], { icon: icon, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      currentPositionMarker.setLatLng([lat, lon]);
+      currentPositionMarker.setIcon(icon);
+    }
+  }
+
+  function updateNavBottomBar(remainingMeters, remainingSeconds){
+    document.getElementById('navRemainingDistance').textContent = formatDistance(remainingMeters);
+    document.getElementById('navRemainingTime').textContent = formatDuration(remainingSeconds);
+    var eta = new Date(Date.now() + remainingSeconds * 1000);
+    var hh = String(eta.getHours()).padStart(2, '0');
+    var mm = String(eta.getMinutes()).padStart(2, '0');
+    document.getElementById('navEta').textContent = hh + ':' + mm;
+  }
+
+  function recalcNavRoute(lat, lon){
+    navRecalculating = true;
+    navLastRecalcAttempt = Date.now();
+    document.getElementById('navBannerMessage').textContent = 'Recalculando ruta…';
+    document.getElementById('navBannerDistance').textContent = '';
+    speak('Te has desviado de la ruta. Recalculando.');
+
+    fetchRoute({
+      apiKey: navApiKeySnapshot,
+      origin: { lat: lat, lon: lon },
+      destination: navDestination,
+      travelMode: 'truck',
+      vehicle: navVehicleSnapshot,
+      hazmatType: navHazmatType
+    }).then(function(newRoute){
+      drawTruckRoute(newRoute);
+      lastTruckRoute = newRoute;
+      setNavRouteData(newRoute);
+      navOffRouteStrikes = 0;
+      navRecalculating = false;
+    }).catch(function(){
+      navRecalculating = false;
+      document.getElementById('navBannerMessage').textContent = 'No se pudo recalcular. Sigue las indicaciones anteriores.';
+    });
+  }
+
+  function onPositionUpdate(position){
+    if (!navActive) return;
+
+    var lat = position.coords.latitude;
+    var lon = position.coords.longitude;
+    var heading = position.coords.heading;
+
+    if ((heading == null || isNaN(heading)) && navLastLatLng) {
+      heading = computeBearing(navLastLatLng[0], navLastLatLng[1], lat, lon);
+    }
+    if (heading == null || isNaN(heading)) heading = navLastHeading;
+    navLastHeading = heading;
+    navLastLatLng = [lat, lon];
+
+    updateCurrentPositionMarker(lat, lon, heading);
+
+    if (navFollowMode) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+    }
+
+    var progress = findClosestPointOnTrack(navTrack, lat, lon);
+    if (!progress) return;
+
+    if (!navArrived) {
+      if (progress.distanceMeters > 70) {
+        navOffRouteStrikes++;
+      } else {
+        navOffRouteStrikes = 0;
+      }
+      var cooldownOk = (Date.now() - navLastRecalcAttempt) > 20000;
+      if (navOffRouteStrikes >= 2 && !navRecalculating && cooldownOk) {
+        recalcNavRoute(lat, lon);
+        return;
+      }
+    }
+
+    while (navNextIndex < navInstructions.length - 1 &&
+           navInstructions[navNextIndex].routeOffsetInMeters <= progress.cumMeters + 5) {
+      navNextIndex++;
+    }
+
+    var totalMeters = navRoute.summary.lengthInMeters;
+    var totalSeconds = navRoute.summary.travelTimeInSeconds;
+    var remainingMeters = Math.max(0, totalMeters - progress.cumMeters);
+    var traveledSeconds = interpolateTimeByOffset(navRoute, progress.cumMeters);
+    var remainingSeconds = Math.max(0, totalSeconds - traveledSeconds);
+
+    updateNavBottomBar(remainingMeters, remainingSeconds);
+
+    if (remainingMeters < 40 && navNextIndex >= navInstructions.length - 1) {
+      if (!navArrived) {
+        navArrived = true;
+        speak('Has llegado a tu destino.');
+      }
+      document.getElementById('navBannerIcon').innerHTML = MANEUVER_ICONS.arrive;
+      document.getElementById('navBannerMessage').textContent = 'Has llegado a tu destino';
+      document.getElementById('navBannerDistance').textContent = '';
+      return;
+    }
+
+    var currentInstr = navInstructions[navNextIndex];
+    if (!currentInstr) return;
+    var distanceToManeuver = Math.max(0, currentInstr.routeOffsetInMeters - progress.cumMeters);
+
+    document.getElementById('navBannerIcon').innerHTML = MANEUVER_ICONS[pickManeuverIcon(currentInstr.maneuver || currentInstr.instructionType)];
+    document.getElementById('navBannerMessage').textContent = currentInstr.message || 'Continúa por la ruta';
+    document.getElementById('navBannerDistance').textContent = formatStepDistance(distanceToManeuver);
+
+    if (distanceToManeuver <= 550 && distanceToManeuver > 120 && !navAnnouncedFar[navNextIndex]) {
+      navAnnouncedFar[navNextIndex] = true;
+      speak('En ' + formatStepDistance(distanceToManeuver) + ', ' + (currentInstr.message || ''));
+    }
+    if (distanceToManeuver <= 50 && !navAnnouncedNear[navNextIndex]) {
+      navAnnouncedNear[navNextIndex] = true;
+      speak(currentInstr.message || 'Continúa');
+    }
+  }
+
+  function onPositionError(err){
+    var msg;
+    if (err.code === 1) {
+      msg = 'Permiso de ubicación denegado. Actívalo en el navegador para poder navegar.';
+    } else if (err.code === 3) {
+      msg = 'No se pudo obtener tu ubicación (tiempo agotado). Comprueba el GPS.';
+    } else {
+      msg = 'No se pudo obtener tu ubicación. Recuerda que el navegador exige HTTPS (o "localhost") para permitir el GPS.';
+    }
+    document.getElementById('navBannerMessage').textContent = msg;
+    document.getElementById('navBannerDistance').textContent = '';
+  }
+
+  /* ============================================================
+     EVENTOS
+     ============================================================ */
+  function bindEvents(){
+    document.getElementById('calculateBtn').addEventListener('click', calculateRoutes);
+    document.getElementById('pinsBtn').addEventListener('click', searchPins);
+
+    document.getElementById('presetRigid').addEventListener('click', function(){
+      applyPreset('rigid12');
+    });
+    document.getElementById('presetTrailer').addEventListener('click', function(){
+      applyPreset('trailer40');
+    });
+
+    document.getElementById('viewStepsTruckBtn').addEventListener('click', function(){
+      openStepsDrawer('truck');
+    });
+    document.getElementById('viewStepsCarBtn').addEventListener('click', function(){
+      openStepsDrawer('car');
+    });
+    document.getElementById('stepsTabTruck').addEventListener('click', function(){
+      openStepsDrawer('truck');
+    });
+    document.getElementById('stepsTabCar').addEventListener('click', function(){
+      openStepsDrawer('car');
+    });
+    document.getElementById('stepsTabRest').addEventListener('click', function(){
+      openStepsDrawer('rest');
+    });
+    document.getElementById('stepsCloseBtn').addEventListener('click', closeStepsDrawer);
+    document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+
+    document.getElementById('viewRestPlanBtn').addEventListener('click', function(){
+      openStepsDrawer('rest');
+    });
+    document.getElementById('resetDriverBtn').addEventListener('click', function(){
+      ['drivenSinceBreakH', 'drivenSinceBreakM', 'drivenTodayH', 'drivenTodayM'].forEach(function(id){
+        document.getElementById(id).value = '';
+      });
+      if (activeStepsMode === 'rest' && document.getElementById('stepsDrawer').classList.contains('visible')) {
+        renderRestPlan();
+      }
+    });
+    ['drivenSinceBreakH', 'drivenSinceBreakM', 'drivenTodayH', 'drivenTodayM'].forEach(function(id){
+      document.getElementById(id).addEventListener('input', function(){
+        if (activeStepsMode === 'rest' && document.getElementById('stepsDrawer').classList.contains('visible')) {
+          renderRestPlan();
+        }
+      });
+    });
+
+    document.getElementById('toggleKeyBtn').addEventListener('click', function(){
+      var input = document.getElementById('apiKey');
+      var isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      this.textContent = isPassword ? 'Ocultar' : 'Ver';
+    });
+
+    var originInput = document.getElementById('originInput');
+    var destInput = document.getElementById('destInput');
+    [originInput, destInput].forEach(function(el){
+      el.addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter') calculateRoutes();
+      });
+    });
+
+    document.getElementById('startNavBtn').addEventListener('click', startNavigation);
+    document.getElementById('navExitBtn').addEventListener('click', stopNavigation);
+    document.getElementById('navMuteBtn').addEventListener('click', function(){
+      navMuted = !navMuted;
+      document.getElementById('navMuteIcon').textContent = navMuted ? '🔇' : '🔊';
+      if (navMuted) { try { window.speechSynthesis.cancel(); } catch (e) { /* nada que cancelar */ } }
+    });
+    document.getElementById('navRecenterBtn').addEventListener('click', function(){
+      navFollowMode = true;
+      document.getElementById('navRecenterBtn').classList.remove('visible');
+      if (navLastLatLng) map.setView(navLastLatLng, Math.max(map.getZoom(), 16), { animate: true });
+    });
+    map.on('dragstart', function(){
+      if (navActive) {
+        navFollowMode = false;
+        document.getElementById('navRecenterBtn').classList.add('visible');
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var savedTheme = null;
+    try { savedTheme = localStorage.getItem('hgvThemePref'); } catch (e) { /* almacenamiento no disponible */ }
+    currentTheme = (savedTheme === 'light') ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+
+    initMap(currentTheme);
+    bindEvents();
+    updateThemeToggleIcon();
+  });
+
+})();
+</script>
+</body>
+</html>
